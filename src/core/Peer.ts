@@ -86,6 +86,10 @@ export class Peer {
         this.setupSocket(socket, key);
     }
 
+    isComplete(): boolean {
+        return this.fileManager.isComplete();
+    }
+
     private setupSocket(socket: Socket, key: string) {
         this.connections.set(key, socket);
 

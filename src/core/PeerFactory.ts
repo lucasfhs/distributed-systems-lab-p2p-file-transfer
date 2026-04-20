@@ -57,9 +57,27 @@ export class PeerFactory {
         if (created < amount) {
             console.warn('⚠️ Not enough available ports in range');
         }
+
+        this.startCompletionWatcher();
     }
 
     getPeers(): Peer[] {
         return this.peers;
+    }
+
+    private startCompletionWatcher() {
+        const interval = setInterval(() => {
+            const allCompleted = this.peers.every(
+                (peer) => peer.isComplete()
+            );
+
+            if (allCompleted) {
+                console.log('\n🎉 ALL PEERS COMPLETED\n');
+
+                clearInterval(interval);
+
+                setTimeout(() => process.exit(0), 1000);
+            }
+        }, 1000);
     }
 }
