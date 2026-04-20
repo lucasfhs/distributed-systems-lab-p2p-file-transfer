@@ -1,23 +1,20 @@
 import net, { Socket } from 'net';
+import crypto from 'crypto';
 import {
     Message,
     MessageSerializer,
     MessageUtils,
     PeerAddress
-} from '../protocol/Message';
-import { FileManager } from './FileManager';
-import { TP2Metadata } from './TorrentFileHandler';
-
-type PeerStats = {
-    bytesReceived: number;
-    lastUpdate: number;
-    speed: number;
-};
+} from '@/protocol/Message';
+import { FileManager } from '@/core/FileManager';
+import { TP2Metadata } from '@/core/TorrentFileHandler';
 
 export class Peer {
     private port: number;
     private metadata: TP2Metadata;
     private fileManager: FileManager;
+
+    private peerId = crypto.randomBytes(20).toString('hex');
 
     private server: net.Server;
 
@@ -25,17 +22,14 @@ export class Peer {
     private connections: Map<string, Socket> = new Map();
 
     private requestedChunks: Set<number> = new Set();
-
-    private peerStats: Map<string, PeerStats> = new Map();
-    private preferredPeers: Socket[] = [];
-
-    private isCompleted = false;
+    private requestTimestamps: Map<number, number> = new Map();
 
     private maxConnections = 6;
     private maxDownloadRequests = 10;
     private maxUploadSlots = 3;
-
     private activeUploads = 0;
+
+    private requestTimeout = 3000;
 
     constructor(port: number, metadata: TP2Metadata, fileManager: FileManager) {
         this.port = port;
@@ -44,17 +38,24 @@ export class Peer {
         this.server = net.createServer(this.handleConnection.bind(this));
     }
 
-    start() {
+    start(bootstrapPeers: PeerAddress[] = []) {
         this.server.listen(this.port, () => {
             console.log(`[Peer ${this.port}] Listening...`);
         });
 
         if (this.fileManager.isComplete()) {
-            this.markAsComplete('startup');
+            console.log(`[Peer ${this.port}] Seeder`);
         }
 
+        bootstrapPeers.forEach(p => this.connectToPeer(p));
+
         setInterval(() => this.downloadLoop(), 300);
-        setInterval(() => this.rotatePeers(), 5000);
+
+        setInterval(() => {
+            this.broadcast(
+                MessageUtils.createPeers(this.getKnownPeers())
+            );
+        }, 3000);
     }
 
     connectToPeer(address: PeerAddress) {
@@ -66,7 +67,11 @@ export class Peer {
 
         const socket = net.createConnection(address.port, address.host, () => {
             console.log(`[Peer ${this.port}] Connected to ${key}`);
-            this.send(socket, MessageUtils.createHello(this.metadata.infoHash));
+
+            this.send(
+                socket,
+                MessageUtils.createHello(this.metadata.infoHash, this.peerId)
+            );
         });
 
         this.setupSocket(socket, key);
@@ -113,14 +118,14 @@ export class Peer {
             case 'PEERS':
                 for (const peer of message.peers) {
                     const key = `${peer.host}:${peer.port}`;
-                    if (!this.knownPeers.has(key)) {
+
+                    if (!this.knownPeers.has(key) &&
+                        this.connections.size < this.maxConnections) {
+
                         this.knownPeers.add(key);
                         this.connectToPeer(peer);
                     }
                 }
-                break;
-
-            case 'BITFIELD':
                 break;
 
             case 'REQUEST':
@@ -132,7 +137,7 @@ export class Peer {
                 const chunk = await this.fileManager.readChunk(message.index);
 
                 console.log(
-                    `[Peer ${this.port}] ➡ chunk ${message.index} to ${this.getSocketId(socket)}`
+                    `[Peer ${this.port}] ➡ ${message.index} to ${this.getSocketId(socket)}`
                 );
 
                 this.send(socket, MessageUtils.createPiece(message.index, chunk));
@@ -142,48 +147,44 @@ export class Peer {
 
             case 'PIECE':
                 const data = MessageUtils.parsePieceData(message.data);
-                const ok = this.fileManager.saveChunk(message.index, data);
 
-                if (ok) {
-                    const from = this.getSocketId(socket);
-
+                if (this.fileManager.saveChunk(message.index, data)) {
                     console.log(
-                        `[Peer ${this.port}] ⬅ chunk ${message.index} from ${from}`
+                        `[Peer ${this.port}] ⬅ ${message.index} from ${this.getSocketId(socket)}`
                     );
 
-                    this.updateStats(from, data.length);
-
                     this.requestedChunks.delete(message.index);
+                    this.requestTimestamps.delete(message.index);
 
                     this.broadcast(MessageUtils.createHave(message.index));
-
-                    this.checkCompletion();
                 }
                 break;
 
             case 'HAVE':
-                if (!this.fileManager.hasChunk(message.index) &&
-                    !this.requestedChunks.has(message.index)) {
-
-                    const socketId = this.getSocketId(socket);
-
-                    this.requestedChunks.add(message.index);
-                    this.send(socket, MessageUtils.createRequest(message.index));
+                if (!this.fileManager.hasChunk(message.index)) {
+                    this.requestedChunks.delete(message.index);
                 }
                 break;
         }
     }
 
     private downloadLoop() {
+        const now = Date.now();
+
+        for (const [index, time] of this.requestTimestamps.entries()) {
+            if (now - time > this.requestTimeout) {
+                this.requestedChunks.delete(index);
+                this.requestTimestamps.delete(index);
+            }
+        }
+
         if (this.requestedChunks.size >= this.maxDownloadRequests) return;
 
         const missing = this.fileManager
             .getMissingChunks()
             .sort(() => Math.random() - 0.5);
 
-        const sockets = this.preferredPeers.length > 0
-            ? this.preferredPeers
-            : Array.from(this.connections.values());
+        const sockets = Array.from(this.connections.values());
 
         for (const index of missing) {
             if (this.requestedChunks.has(index)) continue;
@@ -194,50 +195,15 @@ export class Peer {
             const socket = sockets[Math.floor(Math.random() * sockets.length)];
 
             this.requestedChunks.add(index);
+            this.requestTimestamps.set(index, Date.now());
+
             this.send(socket, MessageUtils.createRequest(index));
         }
     }
 
-    private rotatePeers() {
-        const entries = Array.from(this.connections.entries());
-
-        const sorted = entries.sort((a, b) => {
-            const speedA = this.peerStats.get(a[0])?.speed || 0;
-            const speedB = this.peerStats.get(b[0])?.speed || 0;
-            return speedB - speedA;
-        });
-
-        this.preferredPeers = sorted
-            .slice(0, 2)
-            .map(([_, socket]) => socket);
-    }
-
-    private updateStats(peerId: string, bytes: number) {
-        const now = Date.now();
-
-        const stats = this.peerStats.get(peerId) || {
-            bytesReceived: 0,
-            lastUpdate: now,
-            speed: 0
-        };
-
-        stats.bytesReceived += bytes;
-
-        const deltaTime = (now - stats.lastUpdate) / 1000;
-
-        if (deltaTime > 0) {
-            stats.speed = stats.bytesReceived / deltaTime;
-        }
-
-        stats.lastUpdate = now;
-
-        this.peerStats.set(peerId, stats);
-    }
-
     private getSocketId(socket: Socket): string {
         const address = socket.remoteAddress?.replace('::ffff:', '');
-        const port = socket.remotePort;
-        return `${address}:${port}`;
+        return `${address}:${socket.remotePort}`;
     }
 
     private send(socket: Socket, message: Message) {
@@ -251,27 +217,9 @@ export class Peer {
     }
 
     private getKnownPeers(): PeerAddress[] {
-        return Array.from(this.knownPeers).map((p) => {
+        return Array.from(this.knownPeers).map(p => {
             const [host, port] = p.split(':');
             return { host, port: Number(port) };
         });
-    }
-
-    private checkCompletion() {
-        if (!this.isCompleted && this.fileManager.isComplete()) {
-            this.markAsComplete('download');
-        }
-    }
-
-    private markAsComplete(origin: 'download' | 'startup') {
-        if (this.isCompleted) return;
-
-        this.isCompleted = true;
-
-        if (origin === 'startup') {
-            console.log(`[Peer ${this.port}] Seeder (already complete)`);
-        } else {
-            console.log(`[Peer ${this.port}] DOWNLOAD COMPLETED`);
-        }
     }
 }
