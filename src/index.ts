@@ -1,22 +1,42 @@
-import { TP2Torrent, FileType } from "./core/TorrentFileHandler";
-import { FileManager } from "./core/FileManager";
+import { TP2Torrent, FileType } from './core/TorrentFileHandler';
+import { FileManager } from './core/FileManager';
+import { Peer } from './core/Peer';
 
 async function main() {
-    const metadata = await TP2Torrent.create('test/files/text-input.txt', FileType.SIZE_1KB);
+    const metadata = await TP2Torrent.create(
+        'test/files/text-input.txt',
+        FileType.SIZE_1KB
+    );
 
-    const seeder = new FileManager(metadata, 'test/files');
-    const leecher = new FileManager(metadata, 'downloads');
+    console.log('Total chunks:', metadata.totalChunks);
 
-    console.log('Total de chunks:', metadata.totalChunks);
+    const peerA = new Peer(
+        4000,
+        metadata,
+        new FileManager(metadata, 'test/files')
+    );
 
-    for (let i = 0; i < metadata.totalChunks; i++) {
-        const chunk = await seeder.readChunk(i);
-        const ok = leecher.saveChunk(i, chunk);
+    const peerB = new Peer(
+        5000,
+        metadata,
+        new FileManager(metadata, 'downloads1')
+    );
 
-        console.log(`Chunk ${i}:`, ok ? 'OK' : 'FALHOU');
-    }
+    const peerC = new Peer(
+        6000,
+        metadata,
+        new FileManager(metadata, 'downloads2')
+    );
 
-    console.log('Download completo:', leecher.isComplete());
+    peerA.start();
+    peerB.start();
+    peerC.start();
+
+    setTimeout(() => {
+        peerB.connectToPeer({ host: '127.0.0.1', port: 4000 });
+        peerC.connectToPeer({ host: '127.0.0.1', port: 4000 });
+        peerC.connectToPeer({ host: '127.0.0.1', port: 5000 });
+    }, 500);
 }
 
 main();
