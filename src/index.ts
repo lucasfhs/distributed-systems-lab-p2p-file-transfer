@@ -4,7 +4,7 @@ import { Logger } from '@/utils/Logger';
 
 const logger = new Logger();
 
-const ARCHIVE_PATH = 'test/files/text-input.txt';
+const ARCHIVE_PATH = 'test/files/lorem-ipsum.txt';
 const CHUNK_SIZE = FileType.SIZE_1KB;
 const PEER_COUNT = 10;
 const PORT_RANGE = { min: 5000, max: 6000 };
