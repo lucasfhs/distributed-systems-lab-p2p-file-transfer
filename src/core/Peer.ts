@@ -8,6 +8,9 @@ import {
 } from '@/protocol/Message';
 import { FileManager } from '@/core/FileManager';
 import { TP2Metadata } from '@/core/TorrentFileHandler';
+import { Logger } from '@/utils/Logger';
+
+const logger = new Logger();
 
 export class Peer {
     private port: number;
@@ -40,11 +43,11 @@ export class Peer {
 
     start(bootstrapPeers: PeerAddress[] = []) {
         this.server.listen(this.port, () => {
-            console.log(`[Peer ${this.port}] Listening...`);
+            logger.info(`[Peer ${this.port}] Listening...`);
         });
 
         if (this.fileManager.isComplete()) {
-            console.log(`[Peer ${this.port}] Seeder`);
+            logger.info(`[Peer ${this.port}] Seeder`);
         }
 
         bootstrapPeers.forEach(p => this.connectToPeer(p));
@@ -66,7 +69,7 @@ export class Peer {
         if (key === `127.0.0.1:${this.port}`) return;
 
         const socket = net.createConnection(address.port, address.host, () => {
-            console.log(`[Peer ${this.port}] Connected to ${key}`);
+            logger.info(`[Peer ${this.port}] Connected to ${key}`);
 
             this.send(
                 socket,
@@ -136,8 +139,8 @@ export class Peer {
 
                 const chunk = await this.fileManager.readChunk(message.index);
 
-                console.log(
-                    `[Peer ${this.port}] ➡ ${message.index} to ${this.getSocketId(socket)}`
+                logger.info(
+                    `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getSocketId(socket)}`
                 );
 
                 this.send(socket, MessageUtils.createPiece(message.index, chunk));
@@ -149,8 +152,8 @@ export class Peer {
                 const data = MessageUtils.parsePieceData(message.data);
 
                 if (this.fileManager.saveChunk(message.index, data)) {
-                    console.log(
-                        `[Peer ${this.port}] ⬅ ${message.index} from ${this.getSocketId(socket)}`
+                    logger.info(
+                        `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getSocketId(socket)}`
                     );
 
                     this.requestedChunks.delete(message.index);

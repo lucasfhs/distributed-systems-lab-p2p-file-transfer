@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync, createReadStream, statSync, existsSync } from 'fs';
 import { createHash } from 'crypto';
 import path from 'path';
+import { Logger } from '@/utils/Logger';
+
+const logger = new Logger();
 
 export type TP2Metadata = {
     name: string;
@@ -51,7 +54,7 @@ export class TP2Torrent {
                 const torrentPath = `${filePath}.torrent.tp2`;
                 writeFileSync(torrentPath, JSON.stringify(metadata, null, 2));
 
-                console.log(`TP2Torrent: Metadata file generated: ${torrentPath}`);
+                logger.info(`TP2Torrent: Metadata file generated: ${torrentPath}`);
                 resolve(metadata);
             });
 
