@@ -8,8 +8,6 @@ async function main() {
         FileType.SIZE_1KB
     );
 
-    console.log('Total chunks:', metadata.totalChunks);
-
     const peerA = new Peer(
         4000,
         metadata,
@@ -19,13 +17,13 @@ async function main() {
     const peerB = new Peer(
         5000,
         metadata,
-        new FileManager(metadata, 'downloads1')
+        new FileManager(metadata, 'download/peerB')
     );
 
     const peerC = new Peer(
         6000,
         metadata,
-        new FileManager(metadata, 'downloads2')
+        new FileManager(metadata, 'download/peerC')
     );
 
     peerA.start();
