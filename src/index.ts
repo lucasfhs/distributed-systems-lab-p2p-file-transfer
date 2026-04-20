@@ -1,37 +1,27 @@
 import { TP2Torrent, FileType } from '@/core/TorrentFileHandler';
-import { FileManager } from '@/core/FileManager';
-import { Peer } from '@/core/Peer';
+import { PeerFactory } from '@/core/PeerFactory';
+
+const ARCHIVE_PATH = 'test/files/text-input.txt';
+const CHUNK_SIZE = FileType.SIZE_1KB;
+const PEER_COUNT = 10;
+const PORT_RANGE = { min: 5000, max: 6000 };
+const SEEDER_PORT = 4000;
 
 async function main() {
     const metadata = await TP2Torrent.create(
-        'test/files/text-input.txt',
-        FileType.SIZE_1KB
+        ARCHIVE_PATH,
+        CHUNK_SIZE
     );
 
     console.log('Total chunks:', metadata.totalChunks);
 
-    const peerA = new Peer(
-        4000,
-        metadata,
-        new FileManager(metadata, 'test/files')
-    );
+    const factory = new PeerFactory(metadata);
 
-    const peerB = new Peer(
-        5000,
-        metadata,
-        new FileManager(metadata, 'downloads1')
-    );
+    factory.createSeeder(SEEDER_PORT, 'test/files');
 
-    const peerC = new Peer(
-        6000,
-        metadata,
-        new FileManager(metadata, 'downloads2')
-    );
-
-    peerA.start(); // primeiro peer
-
-    peerB.start([{ host: '127.0.0.1', port: 4000 }]);
-    peerC.start([{ host: '127.0.0.1', port: 4000 }]);
+    factory.createAutoPeers(PEER_COUNT, PORT_RANGE, [
+        { host: '127.0.0.1', port: SEEDER_PORT }
+    ]);
 }
 
 main();
