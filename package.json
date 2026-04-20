@@ -1,0 +1,28 @@
+{
+  "name": "distributed-systems-practical-29-05-2026",
+  "version": "1.0.0",
+  "description": "Este projeto consiste na implementação de um sistema de transferência de arquivos no modelo Peer-to-Peer (P2P), desenvolvido em TypeScript utilizando Node.js. Cada nó da rede (peer) atua simultaneamente como cliente e servidor, sendo capaz de solicitar e fornecer partes de arquivos para outros peers conectados.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasfhs/Distributed-Systems-Practical-29-05-2026.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lucasfhs/Distributed-Systems-Practical-29-05-2026/issues"
+  },
+  "homepage": "https://github.com/lucasfhs/Distributed-Systems-Practical-29-05-2026#readme",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^6.0.3"
+  }
+}
