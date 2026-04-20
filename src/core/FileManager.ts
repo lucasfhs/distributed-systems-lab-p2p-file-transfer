@@ -1,14 +1,14 @@
 import { createReadStream, openSync, writeSync, closeSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 import path from 'path';
-import type { TP2Metadata } from './TorrentFileHandler';
+import { TP2Metadata } from './TorrentFileHandler';
 
 export class FileManager {
     private metadata: TP2Metadata;
     private filePath: string;
     private received: Set<number> = new Set();
 
-    constructor(metadata: TP2Metadata, basePath: string = 'downloads') {
+    constructor(metadata: TP2Metadata, basePath: string) {
         this.metadata = metadata;
         this.filePath = path.join(basePath, metadata.name);
 
@@ -18,6 +18,10 @@ export class FileManager {
 
         if (!existsSync(this.filePath)) {
             writeFileSync(this.filePath, Buffer.alloc(metadata.size));
+        } else {
+            for (let i = 0; i < metadata.totalChunks; i++) {
+                this.received.add(i);
+            }
         }
     }
 
@@ -55,8 +59,12 @@ export class FileManager {
         return true;
     }
 
-    isComplete(): boolean {
-        return this.received.size === this.metadata.totalChunks;
+    hasChunk(index: number): boolean {
+        return this.received.has(index);
+    }
+
+    getOwnedChunks(): number[] {
+        return Array.from(this.received);
     }
 
     getMissingChunks(): number[] {
@@ -69,5 +77,9 @@ export class FileManager {
         }
 
         return missing;
+    }
+
+    isComplete(): boolean {
+        return this.received.size === this.metadata.totalChunks;
     }
 }
