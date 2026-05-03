@@ -72,7 +72,7 @@ export class PeerFactory {
             );
 
             if (allCompleted) {
-                console.log('\n🎉 ALL PEERS COMPLETED\n');
+                console.log('\nALL PEERS COMPLETED\n');
 
                 clearInterval(interval);
 
