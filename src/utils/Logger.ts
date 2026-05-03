@@ -1,4 +1,3 @@
-// logger.ts
 import winston from "winston";
 import fs from "fs";
 import path from "path";
@@ -6,7 +5,7 @@ import path from "path";
 export class Logger {
   private logger: winston.Logger;
 
-  constructor(context?: string) {
+  constructor(context?: string, filename: string = "app.log") {
     const logDir = path.join(process.cwd(), "logs");
 
     if (!fs.existsSync(logDir)) {
@@ -31,12 +30,7 @@ export class Logger {
           format: combine(colorize(), logFormat),
         }),
         new winston.transports.File({
-          filename: path.join(logDir, "app.log"),
-          level: "info",
-        }),
-        new winston.transports.File({
-          filename: path.join(logDir, "error.log"),
-          level: "error",
+          filename: path.join(logDir, filename),
         }),
       ],
     });

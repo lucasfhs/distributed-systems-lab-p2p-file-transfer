@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import { Logger } from '@/utils/Logger';
 
-const logger = new Logger();
+const appLogger = new Logger('App');
 
 export type TP2Metadata = {
     name: string;
@@ -54,7 +54,7 @@ export class TP2Torrent {
                 const torrentPath = `${filePath}.torrent.tp2`;
                 writeFileSync(torrentPath, JSON.stringify(metadata, null, 2));
 
-                logger.info(`TP2Torrent: Metadata file generated: ${torrentPath}`);
+                appLogger.info(`TP2Torrent: Metadata file generated: ${torrentPath}`);
                 resolve(metadata);
             });
 

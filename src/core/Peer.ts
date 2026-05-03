@@ -10,7 +10,8 @@ import { FileManager } from '@/core/FileManager';
 import { TP2Metadata } from '@/core/TorrentFileHandler';
 import { Logger } from '@/utils/Logger';
 
-const logger = new Logger();
+const appLogger     = new Logger('App');
+const messageLogger = new Logger('Message', 'messages.log');
 
 export class Peer {
     private port: number;
@@ -43,11 +44,11 @@ export class Peer {
 
     start(bootstrapPeers: PeerAddress[] = []) {
         this.server.listen(this.port, () => {
-            logger.info(`[Peer ${this.port}] Listening...`);
+            appLogger.info(`[Peer ${this.port}] Listening...`);
         });
 
         if (this.fileManager.isComplete()) {
-            logger.info(`[Peer ${this.port}] Seeder`);
+            appLogger.info(`[Peer ${this.port}] Seeder`);
         }
 
         bootstrapPeers.forEach(p => this.connectToPeer(p));
@@ -69,7 +70,7 @@ export class Peer {
         if (key === `127.0.0.1:${this.port}`) return;
 
         const socket = net.createConnection(address.port, address.host, () => {
-            logger.info(`[Peer ${this.port}] Connected to ${key}`);
+            appLogger.info(`[Peer ${this.port}] Connected to ${key}`);
 
             this.send(
                 socket,
@@ -118,11 +119,13 @@ export class Peer {
             case 'HELLO':
                 if (message.infoHash !== this.metadata.infoHash) return;
 
+                messageLogger.info(`[Peer ${this.port}] Received HELLO from ${this.getSocketId(socket)}`);
                 this.send(socket, MessageUtils.createBitfield(this.fileManager.getOwnedChunks()));
                 this.send(socket, MessageUtils.createPeers(this.getKnownPeers()));
                 break;
 
             case 'PEERS':
+                messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getSocketId(socket)}`);
                 for (const peer of message.peers) {
                     const key = `${peer.host}:${peer.port}`;
 
@@ -136,6 +139,7 @@ export class Peer {
                 break;
 
             case 'REQUEST':
+                messageLogger.info(`[Peer ${this.port}] Received REQUEST from ${this.getSocketId(socket)}`);
                 if (!this.fileManager.hasChunk(message.index)) return;
                 if (this.activeUploads >= this.maxUploadSlots) return;
 
@@ -143,7 +147,7 @@ export class Peer {
 
                 const chunk = await this.fileManager.readChunk(message.index);
 
-                logger.info(
+                appLogger.info(
                     `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getSocketId(socket)}`
                 );
 
@@ -153,10 +157,11 @@ export class Peer {
                 break;
 
             case 'PIECE':
+                messageLogger.info(`[Peer ${this.port}] Received PIECE from ${this.getSocketId(socket)}`);
                 const data = MessageUtils.parsePieceData(message.data);
 
                 if (this.fileManager.saveChunk(message.index, data)) {
-                    logger.info(
+                    appLogger.info(
                         `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getSocketId(socket)}`
                     );
 
@@ -168,6 +173,7 @@ export class Peer {
                 break;
 
             case 'HAVE':
+                messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getSocketId(socket)}`);
                 if (!this.fileManager.hasChunk(message.index)) {
                     this.requestedChunks.delete(message.index);
                 }
