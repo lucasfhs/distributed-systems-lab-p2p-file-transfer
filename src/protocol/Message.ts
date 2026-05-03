@@ -7,6 +7,7 @@ export type HelloMessage = {
     type: 'HELLO';
     infoHash: string;
     peerId: string;
+    port: number;
 };
 
 export type BitfieldMessage = {
@@ -54,8 +55,8 @@ export class MessageSerializer {
 }
 
 export class MessageUtils {
-    static createHello(infoHash: string, peerId: string): HelloMessage {
-        return { type: 'HELLO', infoHash, peerId };
+    static createHello(infoHash: string, peerId: string, port: number): HelloMessage {
+        return { type: 'HELLO', infoHash, peerId, port };
     }
 
     static createBitfield(chunks: number[]): BitfieldMessage {

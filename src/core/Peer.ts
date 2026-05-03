@@ -13,10 +13,16 @@ import { Logger } from '@/utils/Logger';
 const appLogger     = new Logger('App');
 const messageLogger = new Logger('Message', 'messages.log');
 
+type PeerInfo = {
+  peerId: string;
+  port: number;
+};
+
 export class Peer {
     private port: number;
     private metadata: TP2Metadata;
     private fileManager: FileManager;
+    private peerInfoMap: Map<string, PeerInfo> = new Map();
 
     private peerId = crypto.randomBytes(20).toString('hex');
 
@@ -64,6 +70,11 @@ export class Peer {
 
     connectToPeer(address: PeerAddress) {
         const key = `${address.host}:${address.port}`;
+        
+        this.peerInfoMap.set(key, {
+            peerId: 'unknown',
+            port: address.port
+        });
 
         if (this.connections.has(key)) return;
         if (this.connections.size >= this.maxConnections) return;
@@ -74,7 +85,7 @@ export class Peer {
 
             this.send(
                 socket,
-                MessageUtils.createHello(this.metadata.infoHash, this.peerId)
+                MessageUtils.createHello(this.metadata.infoHash, this.peerId, this.port)
             );
         });
 
@@ -119,13 +130,20 @@ export class Peer {
             case 'HELLO':
                 if (message.infoHash !== this.metadata.infoHash) return;
 
-                messageLogger.info(`[Peer ${this.port}] Received HELLO from ${this.getSocketId(socket)}`);
+                const socketId = this.getSocketId(socket);
+
+                this.peerInfoMap.set(socketId, {
+                    peerId: message.peerId,
+                    port: message.port
+                });
+
+                messageLogger.info(`[Peer ${this.port}] Received HELLO from ${this.getPeerName(socket)}`);
                 this.send(socket, MessageUtils.createBitfield(this.fileManager.getOwnedChunks()));
                 this.send(socket, MessageUtils.createPeers(this.getKnownPeers()));
                 break;
 
             case 'PEERS':
-                messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getSocketId(socket)}`);
+                messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getPeerName(socket)}`);
                 for (const peer of message.peers) {
                     const key = `${peer.host}:${peer.port}`;
 
@@ -139,7 +157,7 @@ export class Peer {
                 break;
 
             case 'REQUEST':
-                messageLogger.info(`[Peer ${this.port}] Received REQUEST from ${this.getSocketId(socket)}`);
+                messageLogger.info(`[Peer ${this.port}] Received REQUEST from ${this.getPeerName(socket)}`);
                 if (!this.fileManager.hasChunk(message.index)) return;
                 if (this.activeUploads >= this.maxUploadSlots) return;
 
@@ -148,7 +166,7 @@ export class Peer {
                 const chunk = await this.fileManager.readChunk(message.index);
 
                 appLogger.info(
-                    `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getSocketId(socket)}`
+                    `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getPeerName(socket)}`
                 );
 
                 this.send(socket, MessageUtils.createPiece(message.index, chunk));
@@ -157,12 +175,12 @@ export class Peer {
                 break;
 
             case 'PIECE':
-                messageLogger.info(`[Peer ${this.port}] Received PIECE from ${this.getSocketId(socket)}`);
+                messageLogger.info(`[Peer ${this.port}] Received PIECE from ${this.getPeerName(socket)}`);
                 const data = MessageUtils.parsePieceData(message.data);
 
                 if (this.fileManager.saveChunk(message.index, data)) {
                     appLogger.info(
-                        `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getSocketId(socket)}`
+                        `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getPeerName(socket)}`
                     );
 
                     this.requestedChunks.delete(message.index);
@@ -173,7 +191,7 @@ export class Peer {
                 break;
 
             case 'HAVE':
-                messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getSocketId(socket)}`);
+                messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getPeerName(socket)}`);
                 if (!this.fileManager.hasChunk(message.index)) {
                     this.requestedChunks.delete(message.index);
                 }
@@ -235,4 +253,14 @@ export class Peer {
             return { host, port: Number(port) };
         });
     }
+
+    private getPeerName(socket: Socket): string {
+        const socketId = this.getSocketId(socket);
+        const info = this.peerInfoMap.get(socketId);
+
+        if (!info) return socketId;
+
+        return `Peer ${info.port}`;
+    }
+
 }
