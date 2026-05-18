@@ -47,7 +47,8 @@ async function main() {
     const factory = new PeerFactory(metadata);
 
     factory.createSeeder(SEEDER_PORT, 'test/files');
-    // Desconta um do PEER_COUNT visto que o SEEDER está presente sempre no inicio do swarm.
+
+    // Obs: Desconta um do PEER_COUNT visto que o SEEDER está presente sempre no inicio do swarm.
     factory.createAutoPeers(PEER_COUNT - 1, PORT_RANGE, [
         { host: '127.0.0.1', port: SEEDER_PORT }
     ]);
