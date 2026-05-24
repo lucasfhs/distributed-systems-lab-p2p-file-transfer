@@ -1,4 +1,4 @@
-- Brazilian Portuguese -
+- Brazilian Portuguese
 
 # Sistema P2P de Transferência de Arquivos
 
