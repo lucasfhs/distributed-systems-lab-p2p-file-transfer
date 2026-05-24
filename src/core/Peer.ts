@@ -9,19 +9,22 @@ import {
 import { FileManager } from '@/core/FileManager';
 import { TP2Metadata } from '@/core/TorrentFileHandler';
 import { Logger } from '@/utils/Logger';
+import { Metrics } from '@/utils/Metrics';
 
-const appLogger     = new Logger('App');
+const appLogger = new Logger('App');
 const messageLogger = new Logger('Message', 'messages.log');
 
 type PeerInfo = {
-  peerId: string;
-  port: number;
+    peerId: string;
+    port: number;
 };
 
 export class Peer {
     private port: number;
     private metadata: TP2Metadata;
     private fileManager: FileManager;
+    private metrics: Metrics = new Metrics();
+    private metricsStarted = false;
     private peerInfoMap: Map<string, PeerInfo> = new Map();
 
     private peerId = crypto.randomBytes(20).toString('hex');
@@ -70,7 +73,7 @@ export class Peer {
 
     connectToPeer(address: PeerAddress) {
         const key = `${address.host}:${address.port}`;
-        
+
         this.peerInfoMap.set(key, {
             peerId: 'unknown',
             port: address.port
@@ -163,7 +166,11 @@ export class Peer {
 
                 this.activeUploads++;
 
+                this.startMetricsIfNeeded();
+
                 const chunk = await this.fileManager.readChunk(message.index);
+
+                this.metrics.addUpload(chunk.length);
 
                 appLogger.info(
                     `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getPeerName(socket)}`
@@ -177,8 +184,11 @@ export class Peer {
             case 'PIECE':
                 messageLogger.info(`[Peer ${this.port}] Received PIECE from ${this.getPeerName(socket)}`);
                 const data = MessageUtils.parsePieceData(message.data);
-
+                this.startMetricsIfNeeded();
+                
                 if (this.fileManager.saveChunk(message.index, data)) {
+                    this.metrics.addDownload(data.length);
+                    
                     appLogger.info(
                         `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getPeerName(socket)}`
                     );
@@ -263,4 +273,14 @@ export class Peer {
         return `Peer ${info.port}`;
     }
 
+    public getMetrics() {
+        return this.metrics.report();
+    }
+
+    private startMetricsIfNeeded() {
+        if (!this.metricsStarted) {
+            this.metrics.start();
+            this.metricsStarted = true;
+        }
+    }
 }

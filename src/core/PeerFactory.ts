@@ -74,6 +74,11 @@ export class PeerFactory {
             if (allCompleted) {
                 console.log('\nALL PEERS COMPLETED\n');
 
+                this.peers.forEach((peer, index) => {
+                    console.log(`\nPeer ${index}`);
+                    console.table(peer.getMetrics());
+                });
+
                 clearInterval(interval);
 
                 setTimeout(() => process.exit(0), 1000);
