@@ -62,7 +62,7 @@ export class Peer {
 
         bootstrapPeers.forEach(p => this.connectToPeer(p));
 
-        setInterval(() => this.downloadLoop(), 300);
+        setInterval(() => this.downloadLoop(), 5);
 
         setInterval(() => {
             this.broadcast(
@@ -168,7 +168,7 @@ export class Peer {
                 break;
 
             case 'PEERS':
-                messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getPeerName(socket)}`);
+                // messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getPeerName(socket)}`);
                 for (const peer of message.peers) {
                     const key = `${peer.host}:${peer.port}`;
                     if (key === `127.0.0.1:${this.port}`) {
@@ -231,7 +231,7 @@ export class Peer {
                 break;
 
             case 'HAVE':
-                messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getPeerName(socket)}`);
+                //messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getPeerName(socket)}`);
                 const hSocketId = this.getSocketId(socket);
 
                 let chunks = this.peerChunks.get(hSocketId);

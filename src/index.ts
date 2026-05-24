@@ -21,7 +21,7 @@ const appLogger = new Logger('App');
  * Altere esses valores para executar diferentes combinações de teste.
  */
 const fileKey: FileKey     = FileKey.FILE_A;
-const variation: Variation = Variation.V2;
+const variation: Variation = Variation.V1;
 
 const config       = chooseVariationTest(fileKey, variation);
 const ARCHIVE_PATH = config.archivePath;

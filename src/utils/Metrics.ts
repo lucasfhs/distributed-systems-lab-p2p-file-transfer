@@ -30,11 +30,7 @@ export class Metrics {
             uploadedBytes: this.uploadedBytes,
             downloadedBytes: this.downloadedBytes,
             uploadedChunks: this.uploadedChunks,
-            downloadedChunks: this.downloadedChunks,
-            uploadRate:
-                this.uploadedBytes / elapsedSeconds,
-            downloadRate:
-                this.downloadedBytes / elapsedSeconds
+            downloadedChunks: this.downloadedChunks
         };
     }
 }
