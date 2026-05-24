@@ -9,19 +9,22 @@ import {
 import { FileManager } from '@/core/FileManager';
 import { TP2Metadata } from '@/core/TorrentFileHandler';
 import { Logger } from '@/utils/Logger';
+import { Metrics } from '@/utils/Metrics';
 
-const appLogger     = new Logger('App');
+const appLogger = new Logger('App');
 const messageLogger = new Logger('Message', 'messages.log');
 
 type PeerInfo = {
-  peerId: string;
-  port: number;
+    peerId: string;
+    port: number;
 };
 
 export class Peer {
     private port: number;
     private metadata: TP2Metadata;
     private fileManager: FileManager;
+    private metrics: Metrics = new Metrics();
+    private metricsStarted = false;
     private peerInfoMap: Map<string, PeerInfo> = new Map();
 
     private peerId = crypto.randomBytes(20).toString('hex');
@@ -38,7 +41,7 @@ export class Peer {
     private maxDownloadRequests = 10;
     private maxUploadSlots = 3;
     private activeUploads = 0;
-
+    private peerChunks: Map<string, Set<number>> = new Map();
     private requestTimeout = 3000;
 
     constructor(port: number, metadata: TP2Metadata, fileManager: FileManager) {
@@ -59,7 +62,7 @@ export class Peer {
 
         bootstrapPeers.forEach(p => this.connectToPeer(p));
 
-        setInterval(() => this.downloadLoop(), 300);
+        setInterval(() => this.downloadLoop(), 5);
 
         setInterval(() => {
             this.broadcast(
@@ -69,30 +72,49 @@ export class Peer {
     }
 
     connectToPeer(address: PeerAddress) {
+        appLogger.info(
+            `[Peer ${this.port}] connectToPeer -> ${address.host}:${address.port}`
+        );
+
         const key = `${address.host}:${address.port}`;
-        
-        this.peerInfoMap.set(key, {
-            peerId: 'unknown',
-            port: address.port
-        });
 
         if (this.connections.has(key)) return;
         if (this.connections.size >= this.maxConnections) return;
         if (key === `127.0.0.1:${this.port}`) return;
 
-        const socket = net.createConnection(address.port, address.host, () => {
-            appLogger.info(`[Peer ${this.port}] Connected to ${key}`);
+        this.peerInfoMap.set(key, {
+            peerId: 'unknown',
+            port: address.port
+        });
 
-            this.send(
-                socket,
-                MessageUtils.createHello(this.metadata.infoHash, this.peerId, this.port)
+        const socket = net.createConnection(
+            address.port,
+            address.host,
+            () => {
+                appLogger.info(
+                    `[Peer ${this.port}] Connected to ${key}`
+                );
+
+                this.send(
+                    socket,
+                    MessageUtils.createHello(
+                        this.metadata.infoHash,
+                        this.peerId,
+                        this.port
+                    )
+                );
+            }
+        );
+
+        socket.on('error', err => {
+            appLogger.error(
+                `[Peer ${this.port}] Connection error: ${err}`
             );
         });
 
         this.setupSocket(socket, key);
         this.knownPeers.add(key);
     }
-
     private handleConnection(socket: Socket) {
         const key = this.getSocketId(socket);
         this.setupSocket(socket, key);
@@ -137,33 +159,48 @@ export class Peer {
                     port: message.port
                 });
 
+                const peerKey = `127.0.0.1:${message.port}`;
+                this.knownPeers.add(peerKey);
+
                 messageLogger.info(`[Peer ${this.port}] Received HELLO from ${this.getPeerName(socket)}`);
                 this.send(socket, MessageUtils.createBitfield(this.fileManager.getOwnedChunks()));
                 this.send(socket, MessageUtils.createPeers(this.getKnownPeers()));
                 break;
 
             case 'PEERS':
-                messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getPeerName(socket)}`);
+                // messageLogger.info(`[Peer ${this.port}] Received PEERS from ${this.getPeerName(socket)}`);
                 for (const peer of message.peers) {
                     const key = `${peer.host}:${peer.port}`;
-
-                    if (!this.knownPeers.has(key) &&
-                        this.connections.size < this.maxConnections) {
-
-                        this.knownPeers.add(key);
-                        this.connectToPeer(peer);
+                    if (key === `127.0.0.1:${this.port}`) {
+                        continue;
                     }
+
+                    if (this.connections.size >= this.maxConnections) {
+                        continue;
+                    }
+
+                    this.connectToPeer(peer);
+
                 }
                 break;
 
             case 'REQUEST':
                 messageLogger.info(`[Peer ${this.port}] Received REQUEST from ${this.getPeerName(socket)}`);
+
+                appLogger.info(
+                    `[Peer ${this.port}] Serving chunk ${message.index} to ${this.getPeerName(socket)}`
+                );
+
                 if (!this.fileManager.hasChunk(message.index)) return;
                 if (this.activeUploads >= this.maxUploadSlots) return;
 
                 this.activeUploads++;
 
+                this.startMetricsIfNeeded();
+
                 const chunk = await this.fileManager.readChunk(message.index);
+
+                this.metrics.addUpload(chunk.length);
 
                 appLogger.info(
                     `[Peer ${this.port}] ↑ (Upload) ${message.index} chunk to ${this.getPeerName(socket)}`
@@ -177,8 +214,11 @@ export class Peer {
             case 'PIECE':
                 messageLogger.info(`[Peer ${this.port}] Received PIECE from ${this.getPeerName(socket)}`);
                 const data = MessageUtils.parsePieceData(message.data);
+                this.startMetricsIfNeeded();
 
                 if (this.fileManager.saveChunk(message.index, data)) {
+                    this.metrics.addDownload(data.length);
+
                     appLogger.info(
                         `[Peer ${this.port}] ↓ (Download) ${message.index} chunk from ${this.getPeerName(socket)}`
                     );
@@ -191,10 +231,24 @@ export class Peer {
                 break;
 
             case 'HAVE':
-                messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getPeerName(socket)}`);
-                if (!this.fileManager.hasChunk(message.index)) {
-                    this.requestedChunks.delete(message.index);
+                //messageLogger.info(`[Peer ${this.port}] Received HAVE from ${this.getPeerName(socket)}`);
+                const hSocketId = this.getSocketId(socket);
+
+                let chunks = this.peerChunks.get(hSocketId);
+
+                if (!chunks) {
+                    chunks = new Set<number>();
+                    this.peerChunks.set(hSocketId, chunks);
                 }
+
+                chunks.add(message.index);
+
+                break;
+
+            case 'BITFIELD':
+                messageLogger.info(`[Peer ${this.port}] Received BITFIELD from ${this.getPeerName(socket)}`);
+                const mSocketId = this.getSocketId(socket);
+                this.peerChunks.set(mSocketId, new Set(message.chunks));
                 break;
         }
     }
@@ -223,10 +277,28 @@ export class Peer {
             if (this.requestedChunks.size >= this.maxDownloadRequests) break;
             if (sockets.length === 0) return;
 
-            const socket = sockets[Math.floor(Math.random() * sockets.length)];
+            const candidates = sockets.filter(socket => {
+                const cSocketId = this.getSocketId(socket);
+
+                return this.peerChunks
+                    .get(cSocketId)
+                    ?.has(index);
+            });
+
+            if (candidates.length === 0) {
+                continue;
+            }
 
             this.requestedChunks.add(index);
             this.requestTimestamps.set(index, Date.now());
+
+            const socket = candidates[
+                Math.floor(Math.random() * candidates.length)
+            ];
+
+            appLogger.info(
+                `[Peer ${this.port}] Requesting chunk ${index} from ${this.getPeerName(socket)}`
+            );
 
             this.send(socket, MessageUtils.createRequest(index));
         }
@@ -263,4 +335,14 @@ export class Peer {
         return `Peer ${info.port}`;
     }
 
+    public getMetrics() {
+        return this.metrics.report();
+    }
+
+    private startMetricsIfNeeded() {
+        if (!this.metricsStarted) {
+            this.metrics.start();
+            this.metricsStarted = true;
+        }
+    }
 }

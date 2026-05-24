@@ -2,6 +2,7 @@ import { TP2Torrent } from '@/core/TorrentFileHandler';
 import { PeerFactory } from '@/core/PeerFactory';
 import { Logger } from '@/utils/Logger';
 import { FileKey, Variation, chooseVariationTest } from '@/utils/TestConfigs';
+import { clearDownloadsFolder } from '@/utils/ResetDownloadDirectory';
 
 const appLogger = new Logger('App');
 
@@ -19,8 +20,8 @@ const appLogger = new Logger('App');
  *
  * Altere esses valores para executar diferentes combinações de teste.
  */
-const fileKey: FileKey     = FileKey.FILE_A;
-const variation: Variation = Variation.V1;
+const fileKey: FileKey     = FileKey.FILE_C;
+const variation: Variation = Variation.V2;
 
 const config       = chooseVariationTest(fileKey, variation);
 const ARCHIVE_PATH = config.archivePath;
@@ -28,8 +29,20 @@ const CHUNK_SIZE   = config.chunkSize;
 const PEER_COUNT   = config.peerCount;
 const PORT_RANGE   = config.portRange;
 const SEEDER_PORT  = config.seederPort;
+const CLEAR_RUN    = true;
 
 async function main() {
+    // Remove todos os arquivos da pasta de downloads para garantir uma execução limpa.
+    //
+    // Caso os arquivos de execuções anteriores sejam mantidos, os peers iniciarão
+    // já possuindo o arquivo completo. Nesse cenário, naturalmente todos os nós do swarm serão
+    // identificados como seeders.
+    //
+    // Para testar esse comportamento, defina a variável CLEAR_RUN como false.
+    if (CLEAR_RUN) {
+        clearDownloadsFolder();
+    }
+
     appLogger.info('Starting P2P Transfer Test...');
     appLogger.info(`Archive path: ${ARCHIVE_PATH}`);
     appLogger.info(`Chunk size: ${CHUNK_SIZE}`);
